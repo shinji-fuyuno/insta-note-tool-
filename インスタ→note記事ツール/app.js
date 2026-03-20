@@ -321,8 +321,16 @@ async function generateViaServer(rawText, container) {
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error || `サーバーエラー (${response.status})`);
+    let errorMessage = `サーバーエラー (${response.status})`;
+    try {
+      const err = await response.json();
+      errorMessage = err?.error || errorMessage;
+    } catch {
+      // JSONではないエラー（Vercel自体のエラーメッセージなど）をテキストで取得
+      const rawText = await response.text().catch(() => '');
+      if (rawText) errorMessage += `: ${rawText.slice(0, 100)}`;
+    }
+    throw new Error(errorMessage);
   }
 
   await streamResponse(response, container);
