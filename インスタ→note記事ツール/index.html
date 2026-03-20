@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>インスタ→note記事ジェネレーター</title>
+  <meta name="description" content="インスタグラムの投稿をnoteの記事に自動変換するAIツール" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- 背景アニメーション -->
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="app-wrapper">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="logo">
+          <span class="logo-icon">✦</span>
+          <h1>インスタ→note 記事ジェネレーター</h1>
+        </div>
+        <button id="settingsBtn" class="icon-btn" title="設定">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 設定パネル（モーダル） -->
+    <div id="settingsOverlay" class="modal-overlay hidden">
+      <div class="modal-panel">
+        <div class="modal-header">
+          <h2>⚙️ 設定</h2>
+          <button id="closeSettings" class="icon-btn">✕</button>
+        </div>
+
+        <div class="setting-group">
+          <label for="geminiModel">Geminiモデル</label>
+          <select id="geminiModel">
+            <option value="gemini-2.5-flash">gemini-2.5-flash（推奨・高速）</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro（高品質）</option>
+            <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite（軽量）</option>
+          </select>
+          <p class="hint-text">※ エラーが出る場合は別のモデルをお試しください</p>
+        </div>
+
+        <button id="saveSettings" class="primary-btn full-width">💾 保存する</button>
+      </div>
+    </div>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+
+      <div class="columns">
+        <!-- 左カラム：入力 -->
+        <div class="column input-column">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon">📸</span>
+              <h2>インスタの投稿</h2>
+            </div>
+
+            <div class="form-group">
+              <label for="instaText">投稿テキスト（キャプション）</label>
+              <textarea
+                id="instaText"
+                placeholder="インスタグラムの投稿テキストをここに貼り付けてください&#10;&#10;例：&#10;今日のカフェタイム☕✨&#10;いつもの場所で、いつもの一杯。&#10;でも今日はちょっと違う気分で...&#10;&#10;#カフェ #コーヒー #日常"
+                rows="10"
+              ></textarea>
+              <div class="char-count"><span id="charCount">0</span>文字</div>
+            </div>
+
+            <!-- メディアアップロード -->
+            <div class="form-group">
+              <label>写真・動画（任意）</label>
+              <div id="dropZone" class="drop-zone">
+                <input type="file" id="mediaInput" accept="image/*,video/*" multiple hidden />
+                <div class="drop-zone-inner">
+                  <div class="drop-icon">🖼️</div>
+                  <p class="drop-text">ここにドロップ、またはクリックして選択</p>
+                  <p class="drop-subtext">JPG・PNG・GIF・MP4・MOV 対応 ／ 複数枚OK</p>
+                </div>
+              </div>
+              <!-- プレビューエリア -->
+              <div id="mediaPreview" class="media-preview hidden"></div>
+              <p id="videoWarning" class="hint-text warn-text hidden">⚠️ 動画はGeminiのみ対応。OpenAI使用時は最初のフレームを抽出して分析します。</p>
+            </div>
+
+            <!-- オプション -->
+            <div class="options-grid">
+              <div class="form-group">
+                <label for="toneSelect">文体・トーン</label>
+                <select id="toneSelect">
+                  <option value="casual">カジュアル（話し言葉）</option>
+                  <option value="formal" selected>丁寧（です・ます調）</option>
+                  <option value="literary">文学的・エッセイ調</option>
+                  <option value="motivational">熱量高め・モチベーショナル</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="lengthSelect">記事の長さ</label>
+                <select id="lengthSelect">
+                  <option value="short">短め（500〜800字）</option>
+                  <option value="medium" selected>普通（800〜1500字）</option>
+                  <option value="long">長め（1500〜2500字）</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="additionalNote">補足・ターゲット読者（任意）</label>
+              <textarea
+                id="additionalNote"
+                placeholder="例：20代女性向け、カフェ好き、日常の発見を綴るエッセイとして書いてください"
+                rows="2"
+              ></textarea>
+            </div>
+
+            <!-- オプション設定 -->
+            <div class="checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="removeHashtags" checked />
+                <span class="checkbox-custom"></span>
+                ハッシュタグを除去
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="removeEmoji" />
+                <span class="checkbox-custom"></span>
+                絵文字を除去
+              </label>
+            </div>
+
+            <button id="generateBtn" class="primary-btn full-width generate-btn">
+              <span class="btn-text">✦ note記事を生成する</span>
+              <span class="btn-loading hidden">
+                <span class="spinner"></span> 生成中...
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 右カラム：出力 -->
+        <div class="column output-column">
+          <div class="card output-card">
+            <div class="card-header">
+              <span class="card-icon">📝</span>
+              <h2>生成されたnote記事</h2>
+              <div class="output-actions">
+                <button id="copyBtn" class="action-btn" title="コピー" disabled>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  コピー
+                </button>
+                <button id="clearBtn" class="action-btn" title="クリア" disabled>✕ クリア</button>
+              </div>
+            </div>
+
+            <div id="outputArea" class="output-area">
+              <div class="empty-state">
+                <div class="empty-icon">✦</div>
+                <p>インスタの投稿を入力して<br />「記事を生成する」を押してください</p>
+              </div>
+            </div>
+
+            <div id="outputMeta" class="output-meta hidden">
+              <span id="outputCharCount">0文字</span>
+              <span id="providerBadge" class="badge"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <p>AIが生成した文章は必ず確認・編集の上ご使用ください</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
