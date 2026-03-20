@@ -49,36 +49,43 @@ export default async function handler(req) {
 
   const selectedModel = model || 'gemini-2.5-flash';
 
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:streamGenerateContent?alt=sse&key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          temperature: 0.85,
-          maxOutputTokens: 4096,
-        },
-      }),
-    }
-  );
+  try {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            temperature: 0.85,
+            maxOutputTokens: 4096,
+          },
+        }),
+      }
+    );
 
-  if (!geminiRes.ok) {
-    const errData = await geminiRes.json().catch(() => ({}));
-    const message = errData?.error?.message || `Gemini APIエラー (${geminiRes.status})`;
-    return new Response(JSON.stringify({ error: message }), {
-      status: geminiRes.status,
+    if (!geminiRes.ok) {
+      const errData = await geminiRes.json().catch(() => ({}));
+      console.error('Gemini API Error:', errData);
+      return new Response(JSON.stringify({ error: `Gemini API: ${errData?.error?.message || geminiRes.statusText}` }), {
+        status: geminiRes.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(geminiRes.body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  } catch (err) {
+    console.error('Server Internal Error:', err);
+    return new Response(JSON.stringify({ error: `Internal Server Error: ${err.message}` }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
-
-  // Geminiのストリーミングレスポンスをそのままクライアントに流す
-  return new Response(geminiRes.body, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
 }
