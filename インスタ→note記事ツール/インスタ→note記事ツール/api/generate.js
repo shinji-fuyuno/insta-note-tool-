@@ -1,5 +1,5 @@
-// Vercel Serverless Function (Node.js runtime)
-export default async function handler(req, res) {
+// Vercel Serverless Function (Node.js / CommonJS)
+module.exports = async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -67,4 +67,4 @@ export default async function handler(req, res) {
       res.end();
     }
   }
-}
+};

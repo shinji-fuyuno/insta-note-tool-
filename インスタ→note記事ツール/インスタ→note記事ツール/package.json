@@ -1,6 +1,5 @@
 {
   "name": "insta-note-generator",
   "version": "1.0.0",
-  "type": "module",
   "description": "インスタグラムの投稿からnote記事を生成するツール"
 }
