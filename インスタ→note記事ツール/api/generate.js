@@ -1,31 +1,30 @@
-// Vercel Serverless Function - Gemini APIプロキシ (Node.js)
-export default async function handler(req, res) {
-  // CORS設定
+// Vercel Serverless Function (Node.js / CommonJS)
+module.exports = async function handler(req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.status(200).end();
+    return;
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'サーバーにAPIキーが設定されていません' });
+    res.status(500).json({ error: 'APIキーが設定されていません' });
+    return;
   }
-
-  const { parts, model } = req.body || {};
-  if (!parts || !Array.isArray(parts)) {
-    return res.status(400).json({ error: 'partsが必要です' });
-  }
-
-  const selectedModel = model || 'gemini-1.5-flash';
 
   try {
+    const { parts, model } = req.body;
+    const selectedModel = model || 'gemini-2.0-flash';
+
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {
@@ -33,23 +32,18 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts }],
-          generationConfig: {
-            temperature: 0.85,
-            maxOutputTokens: 4096,
-          },
+          generationConfig: { temperature: 0.85, maxOutputTokens: 4096 },
         }),
       }
     );
 
     if (!geminiRes.ok) {
-      const errData = await geminiRes.json().catch(() => ({}));
-      console.error('Gemini API Error:', errData);
-      return res.status(geminiRes.status).json({ 
-        error: `Gemini API Error: ${errData?.error?.message || geminiRes.statusText}` 
-      });
+      const error = await geminiRes.json().catch(() => ({}));
+      res.status(geminiRes.status).json({ error: error?.error?.message || 'Gemini API Error' });
+      return;
     }
 
-    // ストリーミングレスポンスをクライアントに中継
+    // ストリーミングレスポンスをリレー
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -60,12 +54,17 @@ export default async function handler(req, res) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      res.write(value);
+      const chunk = decoder.decode(value, { stream: true });
+      res.write(chunk);
+      if (res.flush) res.flush();
     }
-    res.end();
 
+    res.end();
   } catch (err) {
-    console.error('Server Internal Error:', err);
-    return res.status(500).json({ error: `Internal Server Error: ${err.message}` });
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    } else {
+      res.end();
+    }
   }
-}
+};
