@@ -44,6 +44,13 @@ const mediaInput   = document.getElementById('mediaInput');
 const mediaPreview = document.getElementById('mediaPreview');
 const videoWarning = document.getElementById('videoWarning');
 
+// SEO要素
+const seoInfo       = document.getElementById('seoInfo');
+const metaDescText  = document.getElementById('metaDescText');
+const tagsText      = document.getElementById('tagsText');
+const copyMetaBtn   = document.getElementById('copyMetaBtn');
+const copyTagsBtn   = document.getElementById('copyTagsBtn');
+
 // ==============================
 // 初期化
 // ==============================
@@ -91,6 +98,20 @@ function setupEventListeners() {
   });
 
   clearBtn.addEventListener('click', resetOutput);
+
+  if (copyMetaBtn) {
+    copyMetaBtn.addEventListener('click', () => {
+      const text = metaDescText ? metaDescText.textContent : '';
+      navigator.clipboard.writeText(text).then(() => showToast('メタディスクリプションをコピーしました ✓'));
+    });
+  }
+
+  if (copyTagsBtn) {
+    copyTagsBtn.addEventListener('click', () => {
+      const text = tagsText ? tagsText.textContent : '';
+      navigator.clipboard.writeText(text).then(() => showToast('タグをコピーしました ✓'));
+    });
+  }
 }
 
 // ==============================
@@ -230,7 +251,7 @@ async function handleGenerate() {
 }
 
 // ==============================
-// プロンプト生成
+// SEO対応プロンプト生成
 // ==============================
 function buildPrompt(rawText) {
   let processedText = rawText;
@@ -261,7 +282,7 @@ function buildPrompt(rawText) {
     ? '- 添付された画像・動画の内容（被写体、雰囲気、色彩、シーンなど）を読み取り、記事の描写に積極的に活かしてください'
     : '';
 
-  return `あなたはプロのnoteライターです。以下の情報をもとに、noteプラットフォーム向けの読み応えのある記事を書いてください。
+  return `あなたはSEOに精通したプロのnoteライターです。以下の情報をもとに、検索エンジンと読者の両方に最適化されたnote記事を生成してください。
 
 【インスタの投稿テキスト】
 ${processedText || '（テキストなし）'}
@@ -272,17 +293,28 @@ ${processedText || '（テキストなし）'}
 ${extra ? `- 追加指示：${extra}` : ''}
 ${mediaNote}
 
-【記事の構成】
-1. タイトル（# で始める）
-2. 導入部（読者の興味を引くリード文）
-3. 本文（投稿の内容を膨らませ、具体的なエピソードや感情、気づきを加える）
-4. まとめ・メッセージ（読者への言葉で締めくくる）
+【SEO執筆ルール】
+- 投稿内容から「読者が検索しそうなキーワード」を1〜2個特定し、タイトルの前半に自然に含める（タイトルは32文字以内が理想）
+- H2・H3の見出しにもキーワードやその関連語を散りばめる
+- 冒頭100文字以内に記事の魅力とキーワードを盛り込み、読者の離脱を防ぐ
+- 1段落は3〜4文程度に収め、スマホでも読みやすいリズムにする
+- 「なぜ？」「どうやって？」「どんな気持ち？」という読者の疑問に答える構成にする
+- 共感・発見・行動を促す締めくくりで滞在時間を伸ばす
+- ハッシュタグは記事本文には書かない
 
-【重要なルール】
-- インスタの投稿を単にコピーするのではなく、note記事として読み応えのある文章に昇華させてください
-- マークダウン形式で書いてください（タイトルは#、見出しは##）
-- ハッシュタグは書かないでください
-- note記事として完成された形で出力してください。説明文や補足は不要です。`;
+【出力フォーマット（必ず以下の区切り文字と順番を守ること）】
+
+---META---
+【メタディスクリプション】
+（noteやGoogleに表示される記事の要約。120〜160文字で、キーワードを冒頭に含め、読者がクリックしたくなる文章にする）
+
+【推奨タグ】
+（noteに設定するタグを5〜8個、カンマ区切りで。#は不要）
+
+---ARTICLE---
+# タイトル
+
+（記事本文。マークダウン形式で。見出しはH2/H3を適切に使う）`;
 }
 
 function parseDataUrl(dataUrl) {
@@ -297,11 +329,9 @@ async function generateViaServer(rawText, container) {
   const prompt = buildPrompt(rawText);
   const parts  = [];
 
-  // メディアをpartsに追加
   for (const item of uploadedMedia) {
     const parsed = parseDataUrl(item.dataUrl);
     if (!parsed) continue;
-    // 動画は20MB以下のみ対応
     if (item.type === 'video' && item.file.size > 20 * 1024 * 1024) {
       showToast(`「${item.file.name}」は大きすぎます（20MB以下にしてください）`, 'error');
       continue;
@@ -326,7 +356,6 @@ async function generateViaServer(rawText, container) {
       const err = await response.json();
       errorMessage = err?.error || errorMessage;
     } catch {
-      // JSONではないエラー（Vercel自体のエラーメッセージなど）をテキストで取得
       const rawText = await response.text().catch(() => '');
       if (rawText) errorMessage += `: ${rawText.slice(0, 100)}`;
     }
@@ -337,7 +366,7 @@ async function generateViaServer(rawText, container) {
 }
 
 // ==============================
-// ストリーミング処理
+// ストリーミング処理（SEO対応）
 // ==============================
 async function streamResponse(response, container) {
   const reader  = response.body.getReader();
@@ -364,14 +393,74 @@ async function streamResponse(response, container) {
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (text) {
           fullText += text;
-          renderArticle(container, fullText, cursor);
+          // ストリーミング中はARTICLE部分だけをプレビュー表示
+          const articlePart = extractArticlePart(fullText);
+          if (articlePart) {
+            renderArticle(container, articlePart, cursor);
+          } else if (!fullText.includes('---META---')) {
+            // フォーマットなしの場合はそのまま表示
+            renderArticle(container, fullText, cursor);
+          }
         }
       } catch (_) {}
     }
   }
 
   if (cursor.parentNode) cursor.parentNode.removeChild(cursor);
-  renderArticle(container, fullText, null);
+
+  // 完了後：フルテキストをパースしてSEO情報と記事を分離
+  const { metaDesc, tags, article } = parseSeoOutput(fullText);
+  renderArticle(container, article || fullText, null);
+  renderSeoInfo(metaDesc, tags);
+}
+
+// ---ARTICLE--- 以降のテキストを抽出
+function extractArticlePart(text) {
+  const idx = text.indexOf('---ARTICLE---');
+  if (idx === -1) return null;
+  return text.slice(idx + 13).trim();
+}
+
+// META・ARTICLE・タグをパース
+function parseSeoOutput(fullText) {
+  const metaMatch    = fullText.match(/---META---([\s\S]*?)---ARTICLE---/);
+  const articleMatch = fullText.match(/---ARTICLE---([\s\S]*)/);
+
+  let metaDesc = '';
+  let tags = '';
+  let article = '';
+
+  if (metaMatch) {
+    const metaSection = metaMatch[1];
+    const descMatch = metaSection.match(/【メタディスクリプション】\s*([\s\S]*?)(?=【推奨タグ】|$)/);
+    const tagsMatch = metaSection.match(/【推奨タグ】\s*([\s\S]*?)$/);
+    if (descMatch) metaDesc = descMatch[1].trim();
+    if (tagsMatch) tags = tagsMatch[1].trim();
+  }
+
+  if (articleMatch) {
+    article = articleMatch[1].trim();
+  } else {
+    article = fullText.trim();
+  }
+
+  return { metaDesc, tags, article };
+}
+
+// SEO情報を画面に表示
+function renderSeoInfo(metaDesc, tags) {
+  if (!seoInfo) return;
+  if (!metaDesc && !tags) {
+    seoInfo.classList.add('hidden');
+    return;
+  }
+  seoInfo.classList.remove('hidden');
+  if (metaDescText && metaDesc) metaDescText.textContent = metaDesc;
+  if (tagsText && tags) {
+    // タグをバッジ形式で表示
+    const tagList = tags.split(/[,、]/).map(t => t.trim()).filter(Boolean);
+    tagsText.innerHTML = tagList.map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join('');
+  }
 }
 
 // ==============================
@@ -383,8 +472,10 @@ function renderArticle(container, text, cursor) {
   for (const line of lines) {
     if (line.startsWith('# ')) {
       html += `<h1>${escapeHtml(line.slice(2))}</h1>`;
-    } else if (line.startsWith('## ') || line.startsWith('### ')) {
-      html += `<h2>${escapeHtml(line.replace(/^#{2,3} /, ''))}</h2>`;
+    } else if (line.startsWith('### ')) {
+      html += `<h3>${escapeHtml(line.slice(4))}</h3>`;
+    } else if (line.startsWith('## ')) {
+      html += `<h2>${escapeHtml(line.slice(3))}</h2>`;
     } else if (line === '') {
       html += '<br>';
     } else {
@@ -423,6 +514,7 @@ function resetOutput() {
   copyBtn.disabled = true;
   clearBtn.disabled = true;
   outputMeta.classList.add('hidden');
+  if (seoInfo) seoInfo.classList.add('hidden');
 }
 
 function enableOutputActions() {
